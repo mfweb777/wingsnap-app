@@ -16,15 +16,15 @@ st.set_page_config(
 # 1. PASTE YOUR EBIRD KEY HERE
 EBIRD_API_KEY = "sspka81ifcmr"
 
-# 2. PASTE YOUR GOOGLE GEMINI KEY HERE (Get it from aistudio.google.com)
+# 2. PASTE YOUR GOOGLE GEMINI KEY HERE
 GOOGLE_API_KEY = "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE"
 
 DEFAULT_LAT = 40.7812
 DEFAULT_LON = -73.9665
 
-# --- SETUP AI ---
-if GOOGLE_API_KEY != "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE":
-    genai.configure(api_key=GOOGLE_API_KEY)
+# --- SETUP AI (FIXED) ---
+# We removed the "if" check so it always configures now
+genai.configure(api_key=GOOGLE_API_KEY)
 
 # --- SESSION STATE ---
 if 'score' not in st.session_state: st.session_state.score = 0
@@ -37,7 +37,6 @@ def identify_bird_with_ai(image):
     """Sends image to Google Gemini to get the bird name."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        # We ask for a very specific format to make matching easier
         response = model.generate_content([
             "Identify the bird in this image. Return ONLY the common name of the bird. If it is not a bird, return 'Not a bird'.", 
             image
@@ -104,7 +103,7 @@ with st.sidebar:
                 st.error("No signals found.")
     
     st.divider()
-    st.caption("Wingsnap AI v2.0")
+    st.caption("Wingsnap AI v2.1")
 
 # --- MAIN APP ---
 c1, c2, c3 = st.columns(3)
@@ -118,9 +117,7 @@ tab1, tab2 = st.tabs(["📸 Capture", "🎒 Collection"])
 
 # --- TAB 1: CAPTURE ---
 with tab1:
-    if GOOGLE_API_KEY == "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE":
-        st.error("⚠️ AI Key Missing! Please paste your Google API Key in the code.")
-    elif not st.session_state.nearby_birds:
+    if not st.session_state.nearby_birds:
         st.info("👈 Open Sidebar -> Click **Scan Area** first.")
     else:
         # PRO MODE TOGGLE
@@ -147,7 +144,6 @@ with tab1:
                 st.balloons()
                 
                 # 4. CROSS-REFERENCE WITH EBIRD LIST
-                # We check if the AI name matches any bird in our local "Scan" list
                 match = next((b for b in st.session_state.nearby_birds if b['name'] in identified_name or identified_name in b['name']), None)
                 
                 if match:
