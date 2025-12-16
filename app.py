@@ -1,8 +1,9 @@
 import streamlit as st
 import requests
-import random
 import time
 import os
+import google.generativeai as genai
+from PIL import Image
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -11,20 +12,41 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- CONFIGURATION & API ---
-API_KEY = "sspka81ifcmr"
+# --- CONFIGURATION ---
+# 1. PASTE YOUR EBIRD KEY HERE
+EBIRD_API_KEY = "sspka81ifcmr"
+
+# 2. PASTE YOUR GOOGLE GEMINI KEY HERE (Get it from aistudio.google.com)
+GOOGLE_API_KEY = "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE"
+
 DEFAULT_LAT = 40.7812
 DEFAULT_LON = -73.9665
 
-# --- SESSION STATE INITIALIZATION ---
+# --- SETUP AI ---
+if GOOGLE_API_KEY != "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE":
+    genai.configure(api_key=GOOGLE_API_KEY)
+
+# --- SESSION STATE ---
 if 'score' not in st.session_state: st.session_state.score = 0
 if 'level' not in st.session_state: st.session_state.level = 1
 if 'inventory' not in st.session_state: st.session_state.inventory = []
 if 'nearby_birds' not in st.session_state: st.session_state.nearby_birds = []
 
 # --- HELPER FUNCTIONS ---
+def identify_bird_with_ai(image):
+    """Sends image to Google Gemini to get the bird name."""
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        # We ask for a very specific format to make matching easier
+        response = model.generate_content([
+            "Identify the bird in this image. Return ONLY the common name of the bird. If it is not a bird, return 'Not a bird'.", 
+            image
+        ])
+        return response.text.strip()
+    except Exception as e:
+        return f"Error: {e}"
+
 def calculate_xp(is_notable, how_many):
-    """Calculates points based on rarity and scarcity."""
     base_xp = 10
     if is_notable:
         rarity_mult = 10.0
@@ -36,10 +58,9 @@ def calculate_xp(is_notable, how_many):
     return int((base_xp * rarity_mult) + scarcity_bonus), label
 
 def fetch_local_birds(lat, lon):
-    """Connects to eBird API to find real birds reported nearby."""
     url_recent = "https://api.ebird.org/v2/data/obs/geo/recent"
     url_notable = "https://api.ebird.org/v2/data/obs/geo/recent/notable"
-    headers = {"X-eBirdApiToken": API_KEY}
+    headers = {"X-eBirdApiToken": EBIRD_API_KEY}
     params = {"lat": lat, "lng": lon, "dist": 5, "back": 7}
 
     try:
@@ -60,11 +81,10 @@ def fetch_local_birds(lat, lon):
                 "count": bird.get('howMany', 1)
             })
         return gamified_birds
-    except Exception as e:
-        st.error(f"Connection Error: {e}")
+    except:
         return []
 
-# --- SIDEBAR (MENU & SETTINGS) ---
+# --- SIDEBAR ---
 with st.sidebar:
     if os.path.exists("logo.png"):
         st.image("logo.png", use_container_width=True)
@@ -81,82 +101,92 @@ with st.sidebar:
                 st.session_state.nearby_birds = birds
                 st.success(f"Tracked {len(birds)} species nearby!")
             else:
-                st.error("No signals found in this area.")
+                st.error("No signals found.")
     
     st.divider()
-    st.caption("Wingsnap Beta v1.4")
+    st.caption("Wingsnap AI v2.0")
 
-# --- MAIN APP INTERFACE ---
+# --- MAIN APP ---
 c1, c2, c3 = st.columns(3)
 c1.metric("Level", st.session_state.level)
-c2.metric("Total XP", st.session_state.score)
+c2.metric("XP", st.session_state.score)
 c3.metric("Birds Nearby", len(st.session_state.nearby_birds))
 
 st.divider()
 
 tab1, tab2 = st.tabs(["📸 Capture", "🎒 Collection"])
 
-# --- TAB 1: CAPTURE SCREEN ---
+# --- TAB 1: CAPTURE ---
 with tab1:
-    if not st.session_state.nearby_birds:
-        st.info("👈 Open the Sidebar menu (top left) and click **Scan Area** to begin!")
+    if GOOGLE_API_KEY == "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE":
+        st.error("⚠️ AI Key Missing! Please paste your Google API Key in the code.")
+    elif not st.session_state.nearby_birds:
+        st.info("👈 Open Sidebar -> Click **Scan Area** first.")
     else:
-        st.write("### Ready to snap?")
-        
-        # PRO MODE TOGGLE (Zoom Support)
+        # PRO MODE TOGGLE
         use_native_cam = st.toggle("🔭 Use Pro Camera (Enables Zoom)", value=False)
-        
         img_file = None
         
         if use_native_cam:
-            st.caption("Opens your phone's native camera app. Supports Zoom & Focus.")
             img_file = st.file_uploader("Tap to Open Camera", type=['jpg', 'png', 'jpeg'], label_visibility="collapsed")
         else:
             img_file = st.camera_input("Take a photo", label_visibility="hidden")
 
-        # PROCESSING LOGIC
         if img_file:
-            with st.spinner("Analyzing bio-signature..."):
-                time.sleep(1.5)
-                caught_bird = random.choice(st.session_state.nearby_birds)
-
-            st.balloons()
-            st.success(f"**Target Acquired!**")
-            
-            with st.container(border=True):
-                st.markdown(f"""
-                ## {caught_bird['name']}
-                **Rarity:** {caught_bird['rarity']}  
-                **XP:** +{caught_bird['xp']}
-                """)
+            with st.spinner("AI is analyzing feather patterns..."):
+                # 1. CONVERT IMAGE FOR AI
+                image = Image.open(img_file)
                 
-                try:
-                    wiki_name = caught_bird['name'].replace(" ", "_")
-                    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{wiki_name}"
-                    headers = {"User-Agent": "WingsnapApp/1.0"}
-                    fact_resp = requests.get(url, headers=headers).json()
-                    # THIS WAS THE LINE CAUSING YOUR ERROR
-                    fact = fact_resp.get('extract', 'Identifying...')
-                    st.info(f"💡 {fact}")
-                except:
-                    st.caption("Could not load bird facts right now.")
+                # 2. ASK GOOGLE AI
+                identified_name = identify_bird_with_ai(image)
+                
+            # 3. CHECK RESULT
+            if "Not a bird" in identified_name or "Error" in identified_name:
+                st.error(f"AI could not confirm bird. Result: {identified_name}")
+            else:
+                st.balloons()
+                
+                # 4. CROSS-REFERENCE WITH EBIRD LIST
+                # We check if the AI name matches any bird in our local "Scan" list
+                match = next((b for b in st.session_state.nearby_birds if b['name'] in identified_name or identified_name in b['name']), None)
+                
+                if match:
+                    st.success(f"**Identified: {match['name']}**")
+                    final_rarity = match['rarity']
+                    final_xp = match['xp']
+                    note = "Confirmed Local Sighting!"
+                else:
+                    st.success(f"**Identified: {identified_name}**")
+                    final_rarity = "UNCOMMON" # Default if not on the list
+                    final_xp = 25
+                    note = "Wild Catch (Not on local scanner)"
 
-            if not any(b['id'] == img_file.name for b in st.session_state.inventory):
-                st.session_state.score += caught_bird['xp']
-                st.session_state.level = 1 + (st.session_state.score // 1000)
-                st.session_state.inventory.append({
-                    "id": img_file.name,
-                    "name": caught_bird['name'],
-                    "rarity": caught_bird['rarity'],
-                    "xp": caught_bird['xp']
-                })
-                time.sleep(4)
-                st.rerun()
+                # Display Card
+                with st.container(border=True):
+                    st.markdown(f"""
+                    ## {identified_name}
+                    **Rarity:** {final_rarity}  
+                    **XP:** +{final_xp}  
+                    *{note}*
+                    """)
 
-# --- TAB 2: INVENTORY SCREEN ---
+                # Save to Inventory
+                if not any(b['id'] == img_file.name for b in st.session_state.inventory):
+                    st.session_state.score += final_xp
+                    st.session_state.level = 1 + (st.session_state.score // 1000)
+                    st.session_state.inventory.append({
+                        "id": img_file.name,
+                        "name": identified_name,
+                        "rarity": final_rarity,
+                        "xp": final_xp
+                    })
+                    time.sleep(4)
+                    st.rerun()
+
+# --- TAB 2: INVENTORY ---
 with tab2:
     if not st.session_state.inventory:
-        st.caption("Your collection is empty. Go catch some birds!")
+        st.caption("Empty.")
     else:
         for bird in reversed(st.session_state.inventory):
             with st.container(border=True):
