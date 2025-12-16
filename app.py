@@ -66,7 +66,6 @@ def fetch_local_birds(lat, lon):
 
 # --- SIDEBAR (MENU & SETTINGS) ---
 with st.sidebar:
-    # --- FIXED LINE BELOW ---
     if os.path.exists("logo.png"):
         st.image("logo.png", use_container_width=True)
     
@@ -85,7 +84,7 @@ with st.sidebar:
                 st.error("No signals found in this area.")
     
     st.divider()
-    st.caption("Wingsnap Beta v1.3")
+    st.caption("Wingsnap Beta v1.4")
 
 # --- MAIN APP INTERFACE ---
 c1, c2, c3 = st.columns(3)
@@ -103,8 +102,21 @@ with tab1:
         st.info("👈 Open the Sidebar menu (top left) and click **Scan Area** to begin!")
     else:
         st.write("### Ready to snap?")
-        img_file = st.camera_input("Take a photo", label_visibility="hidden")
+        
+        # --- NEW ZOOM FEATURE: PRO MODE TOGGLE ---
+        use_native_cam = st.toggle("🔭 Use Pro Camera (Enables Zoom)", value=False)
+        
+        img_file = None
+        
+        if use_native_cam:
+            # Native Camera Mode: Lets user use their phone app
+            st.caption("Opens your phone's native camera app. Supports Zoom & Focus.")
+            img_file = st.file_uploader("Tap to Open Camera", type=['jpg', 'png', 'jpeg'], label_visibility="collapsed")
+        else:
+            # Standard Mode: Fast live preview
+            img_file = st.camera_input("Take a photo", label_visibility="hidden")
 
+        # --- PROCESSING LOGIC (Works for both cameras) ---
         if img_file:
             with st.spinner("Analyzing bio-signature..."):
                 time.sleep(1.5)
@@ -125,36 +137,4 @@ with tab1:
                     url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{wiki_name}"
                     headers = {"User-Agent": "WingsnapApp/1.0"}
                     fact_resp = requests.get(url, headers=headers).json()
-                    fact = fact_resp.get('extract', 'Identifying...')
-                    st.info(f"💡 {fact}")
-                except:
-                    st.caption("Could not load bird facts right now.")
-
-            if not any(b['id'] == img_file.name for b in st.session_state.inventory):
-                st.session_state.score += caught_bird['xp']
-                st.session_state.level = 1 + (st.session_state.score // 1000)
-                st.session_state.inventory.append({
-                    "id": img_file.name,
-                    "name": caught_bird['name'],
-                    "rarity": caught_bird['rarity'],
-                    "xp": caught_bird['xp']
-                })
-                time.sleep(4)
-                st.rerun()
-
-# --- TAB 2: INVENTORY SCREEN ---
-with tab2:
-    if not st.session_state.inventory:
-        st.caption("Your collection is empty. Go catch some birds!")
-    else:
-        for bird in reversed(st.session_state.inventory):
-            with st.container(border=True):
-                col_a, col_b = st.columns([3, 1])
-                with col_a:
-                    st.subheader(bird['name'])
-                    if bird['rarity'] == "LEGENDARY":
-                        st.markdown(f":orange[**{bird['rarity']}**]")
-                    else:
-                        st.caption(f"{bird['rarity']}")
-                with col_b:
-                    st.metric("XP", bird['xp'])
+                    fact = fact_resp.get('extract',
