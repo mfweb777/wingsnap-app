@@ -13,17 +13,13 @@ st.set_page_config(
 )
 
 # --- CONFIGURATION ---
-# 1. PASTE YOUR EBIRD KEY HERE
 EBIRD_API_KEY = "sspka81ifcmr"
-
-# 2. PASTE YOUR GOOGLE GEMINI KEY HERE
-GOOGLE_API_KEY = "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE"
+GOOGLE_API_KEY = "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE" # Your Key
 
 DEFAULT_LAT = 40.7812
 DEFAULT_LON = -73.9665
 
-# --- SETUP AI (FIXED) ---
-# We removed the "if" check so it always configures now
+# --- SETUP AI ---
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # --- SESSION STATE ---
@@ -34,11 +30,14 @@ if 'nearby_birds' not in st.session_state: st.session_state.nearby_birds = []
 
 # --- HELPER FUNCTIONS ---
 def identify_bird_with_ai(image):
-    """Sends image to Google Gemini to get the bird name."""
+    """Sends image to Google Gemini with STRICT instructions."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
+        # UPDATED PROMPT: We force it to say "NOT_A_BIRD" for non-birds
         response = model.generate_content([
-            "Identify the bird in this image. Return ONLY the common name of the bird. If it is not a bird, return 'Not a bird'.", 
+            "Analyze this image carefully. Is there a real bird in the photo? "
+            "If NO (it is a person, object, drawing, or empty), respond with exactly 'NOT_A_BIRD'. "
+            "If YES, respond with ONLY the common name of the bird. Do not add extra words.", 
             image
         ])
         return response.text.strip()
@@ -103,7 +102,7 @@ with st.sidebar:
                 st.error("No signals found.")
     
     st.divider()
-    st.caption("Wingsnap AI v2.1")
+    st.caption("Wingsnap AI v2.2")
 
 # --- MAIN APP ---
 c1, c2, c3 = st.columns(3)
@@ -131,19 +130,18 @@ with tab1:
 
         if img_file:
             with st.spinner("AI is analyzing feather patterns..."):
-                # 1. CONVERT IMAGE FOR AI
                 image = Image.open(img_file)
-                
-                # 2. ASK GOOGLE AI
                 identified_name = identify_bird_with_ai(image)
                 
-            # 3. CHECK RESULT
-            if "Not a bird" in identified_name or "Error" in identified_name:
-                st.error(f"AI could not confirm bird. Result: {identified_name}")
+            # --- STRICT CHECK FOR NON-BIRDS ---
+            # If the AI says "NOT_A_BIRD" or the result is suspiciously long (an error/sentence)
+            if "NOT_A_BIRD" in identified_name or len(identified_name) > 40:
+                st.error("❌ No bird detected. Try getting closer or clearer lighting!")
+                st.caption(f"AI Thought: {identified_name}")
             else:
                 st.balloons()
                 
-                # 4. CROSS-REFERENCE WITH EBIRD LIST
+                # Cross-reference with eBird
                 match = next((b for b in st.session_state.nearby_birds if b['name'] in identified_name or identified_name in b['name']), None)
                 
                 if match:
@@ -153,7 +151,7 @@ with tab1:
                     note = "Confirmed Local Sighting!"
                 else:
                     st.success(f"**Identified: {identified_name}**")
-                    final_rarity = "UNCOMMON" # Default if not on the list
+                    final_rarity = "UNCOMMON"
                     final_xp = 25
                     note = "Wild Catch (Not on local scanner)"
 
