@@ -16,6 +16,7 @@ st.set_page_config(
 EBIRD_API_KEY = "sspka81ifcmr"
 GOOGLE_API_KEY = "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE" # Your Key
 
+# Default: Central Park, NY
 DEFAULT_LAT = 40.7812
 DEFAULT_LON = -73.9665
 
@@ -30,20 +31,15 @@ if 'nearby_birds' not in st.session_state: st.session_state.nearby_birds = []
 
 # --- HELPER FUNCTIONS ---
 def identify_bird_with_ai(image):
-    """Sends image to Google Gemini with STRICTER instructions."""
+    """Strict AI identification."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # --- NEW "PARANOID" PROMPT ---
         prompt = (
-            "You are a strict ornithologist. Look at this photo. "
+            "You are a helpful bird watcher. Look at this photo. "
             "Is there a REAL, LIVING BIRD in this image? "
-            "If the image is a rug, carpet, fabric pattern, drawing, toy, or empty, YOU MUST RESPOND WITH 'NOT_A_BIRD'. "
-            "Do not hallucinate feathers in textures. "
-            "If you are not 100% sure it is a real bird, respond with 'NOT_A_BIRD'. "
-            "If it IS a real bird, respond with ONLY the common name."
+            "If it is a rug, carpet, toy, drawing, or empty, respond with 'NOT_A_BIRD'. "
+            "If it is a real bird, respond with ONLY the common name (e.g., 'Northern Cardinal')."
         )
-        
         response = model.generate_content([prompt, image])
         return response.text.strip()
     except Exception as e:
@@ -87,116 +83,101 @@ def fetch_local_birds(lat, lon):
     except:
         return []
 
-# --- SIDEBAR ---
+# --- AUTOMATIC STARTUP (The Grandma Fix) ---
+# If we haven't scanned yet, do it automatically right now.
+if not st.session_state.nearby_birds:
+    with st.spinner("🚀 Warming up scanners... finding birds near you..."):
+        birds = fetch_local_birds(DEFAULT_LAT, DEFAULT_LON)
+        if birds:
+            st.session_state.nearby_birds = birds
+        else:
+            # Fallback if eBird is down or location is empty
+            st.session_state.nearby_birds = [{"name": "Sparrow", "rarity": "COMMON", "xp": 10}]
+
+# --- SIDEBAR (Hidden Settings) ---
 with st.sidebar:
     if os.path.exists("logo.png"):
         st.image("logo.png", use_container_width=True)
-    
-    st.divider()
-    st.header("📍 Scout Location")
+    st.header("⚙️ Settings")
+    st.write("Change location if you travel:")
     lat = st.number_input("Latitude", value=DEFAULT_LAT, format="%.4f")
     lon = st.number_input("Longitude", value=DEFAULT_LON, format="%.4f")
-    
-    if st.button("📡 Scan Area", type="primary"):
-        with st.spinner("Scanning local bio-signals..."):
-            birds = fetch_local_birds(lat, lon)
-            if birds:
-                st.session_state.nearby_birds = birds
-                st.success(f"Tracked {len(birds)} species nearby!")
-            else:
-                st.error("No signals found.")
-    
-    st.divider()
-    st.caption("Wingsnap AI v2.3 (Strict Mode)")
+    if st.button("Update Location"):
+        st.session_state.nearby_birds = [] # Clear old birds
+        st.rerun() # Restart app to trigger auto-scan
 
-# --- MAIN APP ---
-c1, c2, c3 = st.columns(3)
-c1.metric("Level", st.session_state.level)
-c2.metric("XP", st.session_state.score)
-c3.metric("Birds Nearby", len(st.session_state.nearby_birds))
+# --- MAIN APP UI ---
+st.title("🦅 Wingsnap")
 
-st.divider()
+# Simple Stats
+st.info(f"📍 **We found {len(st.session_state.nearby_birds)} types of birds in your area.** Go find one!")
 
-tab1, tab2 = st.tabs(["📸 Capture", "🎒 Collection"])
+tab1, tab2 = st.tabs(["📸 Camera", "🏆 My Birds"])
 
-# --- TAB 1: CAPTURE ---
+# --- TAB 1: EASY CAMERA ---
 with tab1:
-    if not st.session_state.nearby_birds:
-        st.info("👈 Open Sidebar -> Click **Scan Area** first.")
+    st.write("### 1. Take a picture")
+    
+    # Toggle for Zoom (kept simple)
+    use_zoom = st.toggle("🔍 Enable Zoom (Upload Photo)", value=False)
+
+    img_file = None
+    if use_zoom:
+        img_file = st.file_uploader("Tap to select photo", type=['jpg', 'png', 'jpeg'], label_visibility="collapsed")
     else:
-        # PRO MODE TOGGLE
-        use_native_cam = st.toggle("🔭 Use Pro Camera (Enables Zoom)", value=False)
-        img_file = None
-        
-        if use_native_cam:
-            img_file = st.file_uploader("Tap to Open Camera", type=['jpg', 'png', 'jpeg'], label_visibility="collapsed")
-        else:
-            img_file = st.camera_input("Take a photo", label_visibility="hidden")
+        img_file = st.camera_input("Take a photo", label_visibility="collapsed")
 
-        if img_file:
-            with st.spinner("AI is analyzing feather patterns..."):
-                image = Image.open(img_file)
-                identified_name = identify_bird_with_ai(image)
-                
-            # --- STRICT CHECK ---
-            # Debug: Uncomment the line below if you want to see exactly what the AI said
-            # st.write(f"Debug Raw AI Response: {identified_name}")
-
+    if img_file:
+        st.write("### 2. Identifying...")
+        with st.spinner("Checking with bird experts..."):
+            # AI Logic
+            image = Image.open(img_file)
+            identified_name = identify_bird_with_ai(image)
+            
             if "NOT_A_BIRD" in identified_name or len(identified_name) > 40:
-                st.error("❌ No bird detected.")
-                st.caption("The scanner detected a rug, object, or unclear image.")
+                st.error("🤔 That doesn't look like a bird.")
+                st.caption("Try to get closer, or make sure the bird is in the center.")
             else:
                 st.balloons()
                 
-                # Cross-reference
+                # Match logic
                 match = next((b for b in st.session_state.nearby_birds if b['name'] in identified_name or identified_name in b['name']), None)
                 
                 if match:
-                    st.success(f"**Identified: {match['name']}**")
+                    final_name = match['name']
                     final_rarity = match['rarity']
                     final_xp = match['xp']
-                    note = "Confirmed Local Sighting!"
+                    msg = "You found a local bird! Great job!"
                 else:
-                    st.success(f"**Identified: {identified_name}**")
+                    final_name = identified_name
                     final_rarity = "UNCOMMON"
                     final_xp = 25
-                    note = "Wild Catch (Not on local scanner)"
+                    msg = "Wow! You found a bird we didn't expect!"
 
-                # Display Card
-                with st.container(border=True):
-                    st.markdown(f"""
-                    ## {identified_name}
-                    **Rarity:** {final_rarity}  
-                    **XP:** +{final_xp}  
-                    *{note}*
-                    """)
+                # BIG SUCCESS CARD
+                st.success(f"**It's a {final_name}!**")
+                st.metric("Points Scored", f"+{final_xp} XP")
+                st.caption(msg)
 
-                # Save to Inventory
+                # Save automatically
                 if not any(b['id'] == img_file.name for b in st.session_state.inventory):
                     st.session_state.score += final_xp
-                    st.session_state.level = 1 + (st.session_state.score // 1000)
                     st.session_state.inventory.append({
                         "id": img_file.name,
-                        "name": identified_name,
+                        "name": final_name,
                         "rarity": final_rarity,
                         "xp": final_xp
                     })
                     time.sleep(4)
                     st.rerun()
 
-# --- TAB 2: INVENTORY ---
+# --- TAB 2: SIMPLE COLLECTION ---
 with tab2:
     if not st.session_state.inventory:
-        st.caption("Empty.")
+        st.write("You haven't caught any birds yet.")
     else:
+        st.write(f"You have {len(st.session_state.inventory)} birds!")
         for bird in reversed(st.session_state.inventory):
             with st.container(border=True):
-                col_a, col_b = st.columns([3, 1])
-                with col_a:
-                    st.subheader(bird['name'])
-                    if bird['rarity'] == "LEGENDARY":
-                        st.markdown(f":orange[**{bird['rarity']}**]")
-                    else:
-                        st.caption(f"{bird['rarity']}")
-                with col_b:
-                    st.metric("XP", bird['xp'])
+                st.subheader(bird['name'])
+                st.write(f"**{bird['rarity']}** | {bird['xp']} Points")
