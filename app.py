@@ -45,20 +45,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- API KEYS (CONFIGURATION) ---
-EBIRD_API_KEY = "sspka81ifcmr"
-GOOGLE_API_KEY = "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE" # Your Key
+EBIRD_API_KEY = st.secrets["EBIRD_API_KEY"]
+GOOGLE_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 # Default Location: Central Park, NY
 DEFAULT_LAT = 40.7812
 DEFAULT_LON = -73.9665
 
 # --- SETUP AI ---
-if GOOGLE_API_KEY and GOOGLE_API_KEY != "AIzaSyDrvXOEPuDLby1zOaySqRHXs0xsiwGXLWE":
-     # Only configure if the key has been changed from the placeholder
-     # For this specific user who provided the key in chat, we assume it's correct in the logic below
-     pass 
-
-# Force configuration for this session
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # --- SESSION STATE ---
