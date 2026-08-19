@@ -1,3 +1,6 @@
-streamlit
-requests
-google-generativeai
+streamlit>=1.55
+requests>=2.32
+google-genai>=1.0
+pillow>=10.0
+pydantic>=2.0
+streamlit-geolocation==0.0.10
